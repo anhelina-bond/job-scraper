@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16             # Use version 16 of Postgres
+    container_name: job_agent_db    # The name of this "virtual computer"
+    restart: always                 # If it crashes, restart it
+    environment:
+      POSTGRES_USER: user           # Your database username
+      POSTGRES_PASSWORD: password      # Your database password
+      POSTGRES_DB: job_agent        # The name of the database inside
+    ports:
+      - "5432:5432"                 # Connect your PC's port 5432 to Docker's 5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Keep data even if container stops
+
+volumes:
+  postgres_data:                    # Reserve space on your hard drive

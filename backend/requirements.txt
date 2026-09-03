@@ -1,0 +1,24 @@
+# --- Core API & Environment ---
+fastapi
+uvicorn
+pydantic-settings
+python-dotenv
+
+# --- Agent & LLM Orchestration ---
+langchain
+langgraph
+langchain-anthropic
+langchain-openai
+
+# --- RAG & PDF Processing ---
+chromadb
+pdfplumber
+tiktoken
+
+# --- Scraping ---
+httpx
+beautifulsoup4
+
+# --- Database & Storage ---
+sqlalchemy
+psycopg2-binary
