@@ -13,6 +13,9 @@ class Application(Base):
     match_score = Column(Float)
     cover_letter = Column(Text)
     raw_job_text = Column(Text)
+    requirements = Column(JSON, nullable=True)   # Stores the list of extracted reqs
+    cv_matches = Column(JSON, nullable=True)     # Stores the list of match evidence
+    evaluation = Column(JSON, nullable=True)     # Stores the latest AI critic result
 
 class AgentLog(Base):
     __tablename__ = "logs"

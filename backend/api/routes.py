@@ -14,6 +14,49 @@ class AnalyseRequest(BaseModel):
     url: Optional[str] = None
     manual_text: Optional[str] = None
 
+class FeedbackRequest(BaseModel):
+    application_id: int
+    feedback: str
+
+@router.post("/re-evaluate")
+async def re_evaluate(request: FeedbackRequest, db: Session = Depends(get_db)):
+    app_record = db.query(models.Application).filter(models.Application.id == request.application_id).first()
+    
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # RECONSTRUCT FULL STATE FROM DB
+    current_state = {
+        "job_title": app_record.job_title,
+        "company_name": app_record.company,
+        "requirements": app_record.requirements, # Pulled from DB
+        "cv_matches": app_record.cv_matches,     # Pulled from DB
+        "cover_letter": app_record.cover_letter,
+        "human_feedback": request.feedback,
+        "raw_text": app_record.raw_job_text
+    }
+    
+    try:
+        # Run the agent (it will start from the generation node)
+        revised_state = app_agent.invoke(current_state) 
+        
+        # Update the DB with the new letter and the NEW evaluation
+        app_record.cover_letter = revised_state["cover_letter"]
+        app_record.evaluation = revised_state["evaluation"]
+        
+        db.commit()
+        
+        return {
+            "id": app_record.id,
+            "cover_letter": app_record.cover_letter,
+            "evaluation": app_record.evaluation,
+            "match_score": app_record.match_score,
+            "requirements_analysis": app_record.cv_matches
+        }
+    except Exception as e:
+        print(f"HITL Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/analyse")
 async def analyse_job(request: AnalyseRequest, db: Session = Depends(get_db)):
     if not request.url and not request.manual_text:
@@ -22,7 +65,7 @@ async def analyse_job(request: AnalyseRequest, db: Session = Depends(get_db)):
     # 1. Initialize Agent State
     initial_state = {
         "job_url": request.url,
-        "raw_text": request.manual_text,
+        "raw_text": request.manual_text if request.manual_text else None,
         "status": "starting",
         "requirements": [],
         "cv_matches": []
@@ -33,14 +76,16 @@ async def analyse_job(request: AnalyseRequest, db: Session = Depends(get_db)):
         # .invoke() runs the graph until END
         final_state = app_agent.invoke(initial_state)
 
-        # 3. Save to PostgreSQL: Applications Table
         new_app = models.Application(
             job_url=final_state.get("job_url"),
             job_title=final_state.get("job_title"),
             company=final_state.get("company_name"),
             match_score=final_state.get("match_score"),
             cover_letter=final_state.get("cover_letter"),
-            raw_job_text=final_state.get("raw_text")
+            raw_job_text=final_state.get("raw_text"),
+            requirements=final_state.get("requirements"),
+            cv_matches=final_state.get("cv_matches"),
+            evaluation=final_state.get("evaluation")
         )
         db.add(new_app)
         db.flush()  # Flushes to get the new_app.id before committing

@@ -21,3 +21,8 @@ class AgentState(TypedDict):
     
     # Metadata for DB Logging
     status: str
+
+    # Evaluation  
+    evaluation: Dict[str, Any]
+    human_feedback: Optional[str]  
+    revision_notes: List[str]   
