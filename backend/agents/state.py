@@ -4,7 +4,7 @@ class AgentState(TypedDict):
     # Input
     job_url: Optional[str]
     raw_text: Optional[str]  # Used if URL scraping fails or user pastes text
-    
+    cv_id: int
     # Processed Data
     job_title: Optional[str]
     company_name: Optional[str]

@@ -2,6 +2,15 @@ from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKe
 from sqlalchemy.sql import func
 from .database import Base
 
+class CV(Base):
+    __tablename__ = "cvs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String)
+    label = Column(String)
+    file_path = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class Application(Base):
     __tablename__ = "applications"
 
@@ -16,6 +25,7 @@ class Application(Base):
     requirements = Column(JSON, nullable=True)   # Stores the list of extracted reqs
     cv_matches = Column(JSON, nullable=True)     # Stores the list of match evidence
     evaluation = Column(JSON, nullable=True)     # Stores the latest AI critic result
+    cv_id = Column(Integer, ForeignKey("cvs.id"), nullable=True)
 
 class AgentLog(Base):
     __tablename__ = "logs"

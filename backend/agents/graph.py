@@ -11,6 +11,9 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
 
 # --- NODE 1: Scrape Job ---
 def scrape_job_node(state: AgentState):
+    if state.get("raw_text") and len(state["raw_text"]) > 50:
+        return {"status": "analyzing"}
+    
     print("--- NODE: SCRAPE JOB ---")
     
     # 1. If user already provided manual text, SKIP scraping
@@ -32,6 +35,9 @@ def scrape_job_node(state: AgentState):
 
 # --- NODE 2: Analyse Requirements ---
 def analyze_requirements_node(state: AgentState):
+    if state.get("requirements") and len(state["requirements"]) > 0:
+        return {"status": "matching"}
+    
     print("--- NODE: ANALYZE REQUIREMENTS ---")
     raw_text = state.get("raw_text", "")
 
@@ -68,11 +74,15 @@ def analyze_requirements_node(state: AgentState):
 
 # --- NODE 3: Match against CV ---
 def match_against_cv_node(state: AgentState):
-    print("--- SKILL: MATCHING AGAINST CV ---")
+    if state.get("human_feedback") and state.get("cv_matches"):
+        print("--- SKIPPING MATCHING: Using existing matches for revision ---")
+        return {"status": "generating"}
+
+    print(f"--- SKILL: MATCHING AGAINST CV (ID: {state.get('cv_id')}) ---")
     matches = []
     
     for req in state["requirements"]:
-        relevant_chunks = query_cv(req)
+        relevant_chunks = query_cv(req, cv_id=state["cv_id"]) 
         
         score_prompt = f"""
         Requirement: {req}
@@ -96,17 +106,38 @@ def match_against_cv_node(state: AgentState):
 
 # --- NODE 4: Generate Output ---
 def evaluate_output_node(state: AgentState):
-    print("--- NODE: CRITIC ---")
-    letter = state["cover_letter"]
+    print("--- NODE: CRITIC (Gap Analysis Mode) ---")
+    
+    letter = state.get("cover_letter")
+    requirements = state.get("requirements")
+    company = state.get("company_name")
+    cv_matches = state.get("cv_matches")
     
     prompt = f"""
-    Evaluate this cover letter. 
-    1. Does it sound like a robot wrote it? (Look for buzzwords like 'honed', 'passionate', 'leverage').
-    2. Does it include specific evidence from the CV matches: {state['cv_matches']}?
-    3. Is it too long?
+    You are a Technical Hiring Manager at {company}. 
+    Critique this cover letter specifically against these requirements: {requirements}.
+
+    DO NOT give generic advice about buzzwords unless they are extremely distracting.
     
-    Return JSON: {{"score": 0-100, "critique": "bullet points of what to fix", "is_robotic": true/false}}
+    FOCUS ON GAPS:
+    1. Which specific job requirement from the list is NOT addressed in the letter?
+    2. Does the letter mention the candidate's actual evidence ({cv_matches}) or is it making generic claims?
+    3. Is the opening specific to {company}, or could it be sent to any company?
+
+    SCORING RUBRIC:
+    - 90-100: Addresses all key requirements with specific evidence.
+    - 70-89: Good, but missing evidence for 1-2 minor requirements.
+    - Below 70: Missing evidence for a core requirement or sounds like a template.
+
+    Return ONLY JSON: 
+    {{
+        "score": number, 
+        "critique": "A one-sentence specific gap found", 
+        "missing_points": ["specific requirement 1", "specific requirement 2"],
+        "is_robotic": boolean
+    }}
     """
+    
     response = llm.invoke(prompt)
     eval_data = extract_json(response.content)
     return {"evaluation": eval_data}

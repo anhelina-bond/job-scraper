@@ -1,7 +1,7 @@
 import pdfplumber
 import re
 from langchain_core.documents import Document
-from rag.vector_store import get_vector_store
+from backend.rag.vector_store import get_vector_store
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     full_text = ""
