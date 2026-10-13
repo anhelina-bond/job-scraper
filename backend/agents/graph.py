@@ -85,10 +85,33 @@ def match_against_cv_node(state: AgentState):
         relevant_chunks = query_cv(req, cv_id=state["cv_id"]) 
         
         score_prompt = f"""
-        Requirement: {req}
-        CV Evidence: {relevant_chunks}
-        Return a JSON object: {{"score": 0-100, "reasoning": "string"}}
-        """
+            You are a strict technical recruiter doing CV screening.
+
+            Job Requirement: {req}
+            CV Evidence Retrieved: {relevant_chunks}
+
+            Score this match from 0 to 100 using these STRICT rules:
+
+            - 0-10: The requirement is completely absent from the CV. No mention, no related technology, nothing.
+            - 11-30: The CV mentions something vaguely related but it is a stretch. The candidate would struggle to demonstrate this in an interview.
+            - 31-55: The CV shows indirect or foundational exposure — adjacent technology or a related concept, but not the exact requirement.
+            - 56-75: The CV shows clear evidence of this skill from a real project or internship, but limited depth or only one example.
+            - 76-90: The CV shows solid, repeated evidence across multiple projects or a professional context.
+            - 91-100: The CV directly and strongly demonstrates this requirement with specific, verifiable examples.
+
+            IMPORTANT RULES:
+            - If the retrieved CV evidence does not contain any direct mention of the requirement, the score MUST be below 30.
+            - Do NOT give benefit of the doubt. If it is not in the CV, it is not in the CV.
+            - Do NOT assume transferable skills unless the CV explicitly demonstrates them being transferred.
+            - Knowing Python does not mean knowing FastAPI. Using React does not mean knowing Vue.js.
+
+            Return ONLY this JSON:
+            {{
+                "score": <integer 0-100>,
+                "reasoning": "<one specific sentence explaining the score, citing actual CV evidence or lack of it>",
+                "is_absent": <true if requirement is completely missing from CV, false otherwise>
+            }}
+"""
         
         response = llm.invoke(score_prompt)
         try:
@@ -96,7 +119,8 @@ def match_against_cv_node(state: AgentState):
             matches.append({
                 "requirement": req,
                 "score": match_data.get("score", 0),
-                "reasoning": match_data.get("reasoning", "N/A")
+                "reasoning": match_data.get("reasoning", "N/A"),
+                "is_absent": match_data.get("is_absent", False) 
             })
         except:
             matches.append({"requirement": req, "score": 0, "reasoning": "Failed to parse score"})
@@ -114,29 +138,52 @@ def evaluate_output_node(state: AgentState):
     cv_matches = state.get("cv_matches")
     
     prompt = f"""
-    You are a Technical Hiring Manager at {company}. 
-    Critique this cover letter specifically against these requirements: {requirements}.
+        You are a blunt Technical Hiring Manager at {company} who rejects 80% of applicants.
 
-    DO NOT give generic advice about buzzwords unless they are extremely distracting.
-    
-    FOCUS ON GAPS:
-    1. Which specific job requirement from the list is NOT addressed in the letter?
-    2. Does the letter mention the candidate's actual evidence ({cv_matches}) or is it making generic claims?
-    3. Is the opening specific to {company}, or could it be sent to any company?
+        Your job is to find weaknesses, not validate the candidate.
 
-    SCORING RUBRIC:
-    - 90-100: Addresses all key requirements with specific evidence.
-    - 70-89: Good, but missing evidence for 1-2 minor requirements.
-    - Below 70: Missing evidence for a core requirement or sounds like a template.
+        Cover Letter to critique:
+        {letter}
 
-    Return ONLY JSON: 
-    {{
-        "score": number, 
-        "critique": "A one-sentence specific gap found", 
-        "missing_points": ["specific requirement 1", "specific requirement 2"],
-        "is_robotic": boolean
-    }}
-    """
+        Job Requirements:
+        {requirements}
+
+        CV Evidence actually available:
+        {cv_matches}
+
+        CRITICAL CHECKS — flag every one that applies:
+
+        1. ABSENT SKILLS: Does the letter claim or imply skills that have a score below 30 in cv_matches? 
+        This is a red flag — the candidate is overclaiming.
+        
+        2. UNSUBSTANTIATED CLAIMS: Does the letter make generic statements 
+        ("strong problem-solver", "fast learner") without tying them to a specific project or result?
+        
+        3. MISSING CORE REQUIREMENTS: Which requirements from the list are not addressed at all?
+
+        4. SPECIFICITY: Does the letter cite actual project names and real technical details, 
+        or does it speak in vague generalities?
+
+        5. COMPANY FIT: Does the opening paragraph say something specific about {company} 
+        or could it be copy-pasted to any job application?
+
+        SCORING:
+        - 85-100: Every core requirement addressed with real evidence. Zero overclaiming. Company-specific opening.
+        - 65-84: Solid, but 1 core requirement missing or 1 unsupported claim.
+        - 45-64: Missing evidence for multiple requirements OR making claims the CV cannot back up.
+        - Below 45: Generic template, overclaims absent skills, or ignores core requirements entirely.
+
+        Be harsh. A score above 80 should be rare.
+
+        Return ONLY this JSON:
+        {{
+            "score": <integer 0-100>,
+            "critique": "<one blunt sentence identifying the single biggest weakness>",
+            "missing_points": ["<specific requirement not addressed>"],
+            "overclaimed_skills": ["<skill claimed in letter but absent or weak in CV>"],
+            "is_robotic": <true/false>
+        }}
+        """
     
     response = llm.invoke(prompt)
     eval_data = extract_json(response.content)
